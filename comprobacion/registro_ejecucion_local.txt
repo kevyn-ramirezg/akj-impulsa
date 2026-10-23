@@ -1,0 +1,40 @@
+AKJ Impulsa · Ejecución local de pruebas de permisos
+Fecha: 2026-10-19T19:19:42.593Z
+Motor: PostgreSQL 18.6 (PGlite 0.5.10) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.5 (1db513782be24469589d7cb8a1f1834e9a33f271), 32-bit
+Node: v22.22.0
+Archivos: 00_simulacion_auth_local.sql, 01_esquema_y_permisos.sql, 02_datos_de_prueba.sql, 03_pruebas_permisos.sql
+Resultado: 33 de 33 casos cumplen
+
+P0   CUMPLE  Cliente 1 · Crear solicitud propia · esperado permitido · obtenido 1 fila(s)
+N1   CUMPLE  Visitante sin sesión · Leer la solicitud · esperado denegado · obtenido error: permission denied for table solicitudes
+N2   CUMPLE  Visitante sin sesión · Cambiar su estado · esperado denegado · obtenido error: permission denied for table solicitudes
+N3   CUMPLE  Visitante sin sesión · Editar la oferta del negocio 1 · esperado denegado · obtenido error: permission denied for table ofertas
+N4   CUMPLE  Cliente ajeno (cliente 2) · Leer la solicitud · esperado denegado · obtenido 0 fila(s)
+N5   CUMPLE  Cliente ajeno (cliente 2) · Cambiar su estado · esperado denegado · obtenido 0 fila(s)
+N6   CUMPLE  Cliente ajeno (cliente 2) · Editar la oferta del negocio 1 · esperado denegado · obtenido 0 fila(s)
+N7   CUMPLE  Emprendedor ajeno (negocio 2) · Leer la solicitud · esperado denegado · obtenido 0 fila(s)
+N8   CUMPLE  Emprendedor ajeno (negocio 2) · Cambiar su estado · esperado denegado · obtenido 0 fila(s)
+N9   CUMPLE  Emprendedor ajeno (negocio 2) · Editar la oferta del negocio 1 · esperado denegado · obtenido 0 fila(s)
+N10  CUMPLE  Sesión vencida (sin token válido) · Leer la solicitud · esperado denegado · obtenido error: permission denied for table solicitudes
+N11  CUMPLE  Sesión vencida (sin token válido) · Cambiar su estado · esperado denegado · obtenido error: permission denied for table solicitudes
+N12  CUMPLE  Sesión vencida (sin token válido) · Editar la oferta del negocio 1 · esperado denegado · obtenido error: permission denied for table ofertas
+X1   CUMPLE  Cliente 1 (dueño de la solicitud) · Cambiar el estado de su propia solicitud · esperado denegado · obtenido 0 fila(s)
+X2   CUMPLE  Cliente 2 · Crear solicitud a nombre del cliente 1 · esperado denegado · obtenido error: new row violates row-level security policy for table "solicitudes"
+X3   CUMPLE  Emprendedor 1 · Crear una solicitud (no es cliente) · esperado denegado · obtenido error: new row violates row-level security policy for table "solicitudes"
+X4   CUMPLE  Cliente 1 · Desviar la solicitud a otro negocio · esperado denegado · obtenido error: permission denied for table solicitudes
+X5   CUMPLE  Emprendedor 1 · Cerrar sin motivo · esperado denegado · obtenido error: new row for relation "solicitudes" violates check constraint "cierre_con_motivo"
+X6   CUMPLE  Emprendedor 1 · Editar el mensaje del cliente · esperado denegado · obtenido error: permission denied for table solicitudes
+X7   CUMPLE  Emprendedor 1 · Borrar una solicitud · esperado denegado · obtenido error: permission denied for table solicitudes
+X8   CUMPLE  Emprendedor 1 · Poner precio negativo a su oferta · esperado denegado · obtenido error: new row for relation "ofertas" violates check constraint "ofertas_precio_cop_check"
+P1   CUMPLE  Visitante sin sesión · Consultar el catálogo · esperado permitido · obtenido 2 fila(s)
+P2   CUMPLE  Cliente 1 · Leer su solicitud · esperado permitido · obtenido 1 fila(s)
+P3   CUMPLE  Emprendedor 1 · Leer la solicitud de su negocio · esperado permitido · obtenido 1 fila(s)
+P4   CUMPLE  Emprendedor 1 · Editar su oferta · esperado permitido · obtenido 1 fila(s)
+P5   CUMPLE  Emprendedor 1 · Pendiente → En atención · esperado permitido · obtenido 1 fila(s)
+X9   CUMPLE  Emprendedor 1 · En atención → Pendiente (devolver) · esperado denegado · obtenido error: Transición no permitida: en_atencion → pendiente
+P6   CUMPLE  Emprendedor 1 · En atención → Cerrada con motivo · esperado permitido · obtenido 1 fila(s)
+P7   CUMPLE  Cliente 1 · Ver el estado y el motivo actualizados · esperado permitido · obtenido 1 fila(s)
+X10  CUMPLE  Emprendedor 1 · Reabrir una solicitud cerrada · esperado denegado · obtenido error: Transición no permitida: cerrada → en_atencion
+D1   CUMPLE  Cliente 1 · Ver una oferta no disponible en el catálogo · esperado denegado · obtenido 0 fila(s)
+D2   CUMPLE  Cliente 1 · Crear solicitud sobre una oferta no disponible · esperado denegado · obtenido error: La oferta no existe o no está disponible
+D3   CUMPLE  Emprendedor 1 · Ver su propia oferta no disponible · esperado permitido · obtenido 1 fila(s)

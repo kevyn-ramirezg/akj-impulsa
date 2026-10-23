@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AKJ Impulsa · Prueba entre dispositivos</title>
+<style>
+  :root { --tinta:#1d1d1f; --suave:#5f6368; --borde:#d0d4d9; --fondo:#f6f7f9; --ok:#1e7d32; --mal:#b3261e; --acento:#1f4e79; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--tinta); background:var(--fondo); }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 2px; } h2 { font-size:16px; margin:0 0 8px; }
+  p.sub { color:var(--suave); margin:0 0 16px; }
+  section { background:#fff; border:1px solid var(--borde); border-radius:10px; padding:14px; margin-bottom:12px; }
+  label { display:block; font-size:13px; color:var(--suave); margin:8px 0 2px; }
+  input, select, textarea, button { font:inherit; width:100%; padding:9px 10px; border:1px solid var(--borde); border-radius:8px; background:#fff; color:var(--tinta); }
+  textarea { min-height:64px; resize:vertical; }
+  button { background:var(--acento); color:#fff; border:none; margin-top:10px; cursor:pointer; }
+  button.sec { background:#fff; color:var(--acento); border:1px solid var(--acento); }
+  .fila { display:flex; gap:8px; } .fila > * { flex:1; }
+  .item { border-top:1px solid var(--borde); padding:10px 0; } .item:first-child { border-top:none; }
+  .estado { display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--borde); }
+  .chico { font-size:12px; color:var(--suave); word-break:break-all; }
+  #log { font:12px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space:pre-wrap; max-height:260px; overflow:auto; background:#fbfbfc; border:1px solid var(--borde); border-radius:8px; padding:8px; }
+  .ok { color:var(--ok); } .mal { color:var(--mal); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Prueba entre dispositivos</h1>
+  <p class="sub">AKJ Impulsa · Componente 1. Abra esta página en dos dispositivos con cuentas distintas y siga los pasos del documento.</p>
+
+  <section id="conf">
+    <h2>1. Conexión</h2>
+    <label for="url">URL del proyecto Supabase</label>
+    <input id="url" placeholder="https://xxxx.supabase.co" autocomplete="off">
+    <label for="key">Clave pública (anon). Nunca la clave service_role.</label>
+    <input id="key" autocomplete="off">
+    <button id="conectar">Guardar y conectar</button>
+  </section>
+
+  <section id="sesion" hidden>
+    <h2>2. Sesión</h2>
+    <div id="sinSesion">
+      <label for="correo">Correo de prueba</label>
+      <input id="correo" type="email" placeholder="cliente1@akj.test">
+      <label for="clave">Contraseña</label>
+      <input id="clave" type="password">
+      <button id="entrar">Iniciar sesión</button>
+    </div>
+    <div id="conSesion" hidden>
+      <div id="quien"></div>
+      <button class="sec" id="salir">Cerrar sesión</button>
+    </div>
+  </section>
+
+  <section id="cliente" hidden>
+    <h2>3. Cliente: enviar una solicitud</h2>
+    <label for="oferta">Oferta</label>
+    <select id="oferta"></select>
+    <div id="contacto" class="chico"></div>
+    <label for="mensaje">Mensaje</label>
+    <textarea id="mensaje" maxlength="500" placeholder="Describe la prenda, el daño o las medidas"></textarea>
+    <button id="enviar">Enviar solicitud</button>
+  </section>
+
+  <section id="lista" hidden>
+    <div class="fila"><h2 id="tituloLista">Solicitudes</h2><button class="sec" id="actualizar" style="margin-top:0;max-width:140px">Actualizar</button></div>
+    <div id="solicitudes"></div>
+  </section>
+
+  <section id="negativa" hidden>
+    <h2>Prueba negativa: leer o cambiar una solicitud por su ID (también sin sesión)</h2>
+    <label for="idAjeno">ID de la solicitud (copiarlo del otro dispositivo)</label>
+    <input id="idAjeno">
+    <div class="fila">
+      <button class="sec" id="leerAjena">Intentar leer</button>
+      <button class="sec" id="cambiarAjena">Intentar pasar a En atención</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Registro de la prueba</h2>
+    <div id="log"></div>
+    <button class="sec" id="copiar">Copiar registro</button>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const ETIQUETA = { pendiente: 'Pendiente', en_atencion: 'En atención', cerrada: 'Cerrada' };
+let sb = null, perfil = null, ofertas = [];
+
+function registrar(texto, tipo = '') {
+  const hora = new Date().toLocaleString('es-CO', { hour12: false });
+  const linea = document.createElement('div');
+  linea.className = tipo; linea.textContent = `[${hora}] ${texto}`;
+  $('log').prepend(linea);
+}
+function leerConf() { try { return JSON.parse(localStorage.getItem('akj-conf') || '{}'); } catch { return {}; } }
+function guardarConf(c) { try { localStorage.setItem('akj-conf', JSON.stringify(c)); } catch {} }
+
+function conectar() {
+  const url = $('url').value.trim(), key = $('key').value.trim();
+  if (!url || !key) return registrar('Falta la URL o la clave pública.', 'mal');
+  guardarConf({ url, key });
+  sb = supabase.createClient(url, key);
+  $('sesion').hidden = false; $('negativa').hidden = false;
+  registrar(`Conectado a ${url} (dispositivo: ${navigator.userAgent.slice(0, 60)}…)`);
+  sb.auth.getSession().then(({ data }) => data.session && cargarPerfil());
+}
+
+async function entrar() {
+  const { error } = await sb.auth.signInWithPassword({ email: $('correo').value.trim(), password: $('clave').value });
+  if (error) return registrar(`No se pudo iniciar sesión: ${error.message}`, 'mal');
+  await cargarPerfil();
+}
+async function salir() { await sb.auth.signOut(); perfil = null; pintarSesion(); registrar('Sesión cerrada.'); }
+
+async function cargarPerfil() {
+  const { data: { user } } = await sb.auth.getUser();
+  const { data, error } = await sb.from('perfiles').select('id, rol, nombre').eq('id', user.id).maybeSingle();
+  if (error || !data) return registrar(`Sin perfil para ${user.email}: ${error?.message || 'no existe'}`, 'mal');
+  perfil = { ...data, email: user.email };
+  registrar(`Sesión iniciada: ${perfil.email} (${perfil.rol}).`, 'ok');
+  pintarSesion();
+  if (perfil.rol === 'cliente') await cargarOfertas();
+  await cargarSolicitudes();
+}
+
+function pintarSesion() {
+  const hay = !!perfil;
+  $('sinSesion').hidden = hay; $('conSesion').hidden = !hay;
+  $('cliente').hidden = !(hay && perfil.rol === 'cliente');
+  $('lista').hidden = !hay; $('negativa').hidden = false;
+  if (hay) {
+    $('quien').innerHTML = '';
+    const b = document.createElement('strong'); b.textContent = perfil.nombre;
+    $('quien').append(b, document.createTextNode(` · ${perfil.email} · ${perfil.rol}`));
+    $('tituloLista').textContent = perfil.rol === 'cliente' ? 'Mis solicitudes' : 'Solicitudes de mi negocio';
+  }
+}
+
+async function cargarOfertas() {
+  const { data, error } = await sb.from('ofertas').select('id, nombre, precio_cop, emprendimientos(nombre, contacto)').order('nombre');
+  if (error) return registrar(`Error al leer el catálogo: ${error.message}`, 'mal');
+  ofertas = data;
+  $('oferta').innerHTML = '';
+  data.forEach(o => {
+    const op = document.createElement('option');
+    op.value = o.id; op.textContent = `${o.nombre} · ${o.emprendimientos?.nombre ?? ''} · $${Number(o.precio_cop).toLocaleString('es-CO')}`;
+    $('oferta').append(op);
+  });
+  mostrarContacto();
+  registrar(`Catálogo: ${data.length} oferta(s) visibles.`);
+}
+function mostrarContacto() {
+  const o = ofertas.find(x => x.id === $('oferta').value);
+  $('contacto').textContent = o?.emprendimientos?.contacto ? `Contacto del negocio: ${o.emprendimientos.contacto}` : '';
+}
+
+async function enviar() {
+  const mensaje = $('mensaje').value.trim();
+  if (!mensaje) return registrar('Escriba un mensaje antes de enviar.', 'mal');
+  const { data, error } = await sb.from('solicitudes')
+    .insert({ cliente_id: perfil.id, oferta_id: $('oferta').value, mensaje })
+    .select('id, estado').single();
+  if (error) return registrar(`No se pudo confirmar el registro: ${error.message}`, 'mal');
+  registrar(`Solicitud registrada en el servicio. ID ${data.id} · estado ${ETIQUETA[data.estado]}.`, 'ok');
+  $('mensaje').value = '';
+  await cargarSolicitudes();
+}
+
+async function cargarSolicitudes() {
+  const { data, error } = await sb.from('solicitudes')
+    .select('id, mensaje, estado, motivo_cierre, actualizada_en, ofertas(nombre)')
+    .order('creada_en', { ascending: false });
+  if (error) return registrar(`Error al leer solicitudes: ${error.message}`, 'mal');
+  const cont = $('solicitudes'); cont.innerHTML = '';
+  if (!data.length) cont.textContent = 'Sin solicitudes visibles para esta cuenta.';
+  data.forEach(s => {
+    const d = document.createElement('div'); d.className = 'item';
+    const t = document.createElement('div');
+    const e = document.createElement('span'); e.className = 'estado'; e.textContent = ETIQUETA[s.estado];
+    t.append(document.createTextNode(`${s.ofertas?.nombre ?? 'Oferta'} `), e);
+    const m = document.createElement('div'); m.textContent = s.mensaje;
+    const extra = document.createElement('div'); extra.className = 'chico';
+    extra.textContent = `ID ${s.id} · actualizada ${new Date(s.actualizada_en).toLocaleString('es-CO', { hour12: false })}` +
+      (s.motivo_cierre ? ` · Cerrada por el emprendimiento: ${s.motivo_cierre}` : '');
+    d.append(t, m, extra);
+    if (perfil.rol === 'emprendedor' && s.estado !== 'cerrada') d.append(controles(s));
+    cont.append(d);
+  });
+  registrar(`Lista actualizada: ${data.length} solicitud(es) visibles.`);
+}
+
+function controles(s) {
+  const caja = document.createElement('div');
+  const sel = document.createElement('select');
+  const opciones = s.estado === 'pendiente' ? ['en_atencion', 'cerrada'] : ['cerrada'];
+  opciones.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = ETIQUETA[v]; sel.append(o); });
+  const motivo = document.createElement('input'); motivo.placeholder = 'Motivo de cierre (obligatorio para cerrar)';
+  const b = document.createElement('button'); b.textContent = 'Cambiar estado';
+  b.onclick = async () => {
+    const cambio = { estado: sel.value };
+    if (sel.value === 'cerrada') cambio.motivo_cierre = motivo.value.trim();
+    const { data, error } = await sb.from('solicitudes').update(cambio).eq('id', s.id).select('id, estado');
+    if (error) return registrar(`No se pudo cambiar el estado: ${error.message}`, 'mal');
+    if (!data.length) return registrar('El cambio no se aplicó: la solicitud no es visible para esta cuenta.', 'mal');
+    registrar(`Estado de ${s.id} → ${ETIQUETA[data[0].estado]}.`, 'ok');
+    await cargarSolicitudes();
+  };
+  caja.append(sel, motivo, b);
+  return caja;
+}
+
+async function leerAjena() {
+  const id = $('idAjeno').value.trim();
+  const { data, error } = await sb.from('solicitudes').select('id').eq('id', id);
+  if (error) return registrar(`Lectura de ${id}: bloqueada (${error.message}).`, 'ok');
+  registrar(`Lectura de ${id}: ${data.length} fila(s) visibles${data.length ? ' (revisar: no debería verla)' : ' (bloqueada por permisos)'}.`, data.length ? 'mal' : 'ok');
+}
+async function cambiarAjena() {
+  const id = $('idAjeno').value.trim();
+  const { data, error } = await sb.from('solicitudes').update({ estado: 'en_atencion' }).eq('id', id).select('id');
+  if (error) return registrar(`Cambio de ${id}: bloqueado (${error.message}).`, 'ok');
+  registrar(`Cambio de ${id}: ${data.length} fila(s) modificadas${data.length ? ' (revisar: no debería poder)' : ' (bloqueado por permisos)'}.`, data.length ? 'mal' : 'ok');
+}
+
+$('conectar').onclick = conectar; $('entrar').onclick = entrar; $('salir').onclick = salir;
+$('enviar').onclick = enviar; $('actualizar').onclick = cargarSolicitudes; $('oferta').onchange = mostrarContacto;
+$('leerAjena').onclick = leerAjena; $('cambiarAjena').onclick = cambiarAjena;
+$('copiar').onclick = () => navigator.clipboard?.writeText($('log').innerText).then(() => registrar('Registro copiado.'));
+const c = leerConf(); if (c.url) { $('url').value = c.url; $('key').value = c.key; conectar(); }
+</script>
+</body>
+</html>
